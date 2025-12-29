@@ -63,17 +63,7 @@ All protected endpoints will now include your authentication token.
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
     .addServer('http://localhost:3000', 'Local Development Server')
     .addServer('https://api.esprit-attendance.com', 'Production Server')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'Authorization',
-        description: 'Enter your JWT token',
-        in: 'header',
-      },
-      'access-token',
-    )
+    .addBearerAuth() // Uses default 'bearer' scheme name that matches @ApiBearerAuth() decorator
     .addTag('Authentication', 'User authentication and authorization endpoints')
     .addTag('Students', 'Student management endpoints')
     .addTag('Teachers', 'Teacher management endpoints')
