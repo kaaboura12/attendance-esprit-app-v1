@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -28,11 +29,15 @@ async function bootstrap() {
   // Global prefix for all routes
   app.setGlobalPrefix('api');
 
+  // Setup Swagger documentation
+  setupSwagger(app);
+
   const port = process.env.PORT || 3000;
   await app.listen(port);
 
   logger.log(`🚀 Application is running on: http://localhost:${port}/api`);
-  logger.log(`📚 Health check: http://localhost:${port}/api/auth/health`);
+  logger.log(`📚 Swagger documentation: http://localhost:${port}/api/docs`);
+  logger.log(`💚 Health check: http://localhost:${port}/api/auth/health`);
 }
 
 bootstrap();
