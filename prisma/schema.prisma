@@ -1,14 +1,254 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// ESPRIT Attendance System - Prisma Schema
+// Professional Database Schema with Clean Architecture Principles
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// ============================================================================
+// AUTHENTICATION & USERS
+// ============================================================================
+
+/// Base user table for authentication across all user types
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      UserRole
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  student Student?
+  teacher Teacher?
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ============================================================================
+// STUDENTS
+// ============================================================================
+
+/// Student profile linked to user account
+model Student {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  studentCode String   @unique @map("student_code") // ESPRIT student number
+  fullName    String   @map("full_name")
+  classroomId String   @map("classroom_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classroom          Classroom          @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  attendanceRecords  AttendanceRecord[]
+
+  @@index([userId])
+  @@index([studentCode])
+  @@index([classroomId])
+  @@map("students")
+}
+
+// ============================================================================
+// TEACHERS
+// ============================================================================
+
+/// Teacher profile linked to user account
+model Teacher {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  fullName  String   @map("full_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teachingAssignments TeachingAssignment[]
+
+  @@index([userId])
+  @@map("teachers")
+}
+
+// ============================================================================
+// CLASSROOMS
+// ============================================================================
+
+/// Classroom/Class groups (e.g., GL2-A, GL3-B)
+model Classroom {
+  id         String   @id @default(uuid())
+  name       String   @unique // GL2-A, GL3-B, etc.
+  level      Int // 1, 2, 3, 4, 5
+  department String // GL, DS, AR, etc.
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  students            Student[]
+  teachingAssignments TeachingAssignment[]
+  iotDevices          IoTDevice[]
+
+  @@index([name])
+  @@index([level, department])
+  @@map("classrooms")
+}
+
+// ============================================================================
+// SUBJECTS
+// ============================================================================
+
+/// Academic subjects/courses (Matières)
+model Subject {
+  id        String   @id @default(uuid())
+  name      String // Flutter, Java, AI, etc.
+  code      String   @unique // FLUT301, JAVA201, etc.
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  teachingAssignments TeachingAssignment[]
+
+  @@index([code])
+  @@map("subjects")
+}
+
+// ============================================================================
+// TEACHING ASSIGNMENTS (Core Business Logic)
+// ============================================================================
+
+/// Maps which teacher teaches which subject to which classroom
+/// This is the backbone of the ESPRIT attendance system
+/// One teacher teaches one subject to one classroom
+model TeachingAssignment {
+  id          String   @id @default(uuid())
+  teacherId   String   @map("teacher_id")
+  subjectId   String   @map("subject_id")
+  classroomId String   @map("classroom_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  sessions  Session[]
+
+  // Ensure unique combination: one teacher can't teach the same subject to the same classroom twice
+  @@unique([teacherId, subjectId, classroomId])
+  @@index([teacherId])
+  @@index([subjectId])
+  @@index([classroomId])
+  @@map("teaching_assignments")
+}
+
+// ============================================================================
+// IOT DEVICES
+// ============================================================================
+
+/// IoT devices for scanning student attendance (e.g., RFID readers, NFC devices)
+model IoTDevice {
+  id          String       @id @default(uuid())
+  deviceUid   String       @unique @map("device_uid") // Unique hardware ID
+  classroomId String       @map("classroom_id")
+  status      DeviceStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // Relationships
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  sessions  Session[]
+
+  @@index([deviceUid])
+  @@index([classroomId])
+  @@index([status])
+  @@map("iot_devices")
+}
+
+// ============================================================================
+// ATTENDANCE SESSIONS
+// ============================================================================
+
+/// Represents a single class session where attendance is taken
+/// Created when teacher starts a class
+model Session {
+  id                    String        @id @default(uuid())
+  teachingAssignmentId  String        @map("teaching_assignment_id")
+  deviceId              String        @map("device_id")
+  startedAt             DateTime      @default(now()) @map("started_at")
+  endedAt               DateTime?     @map("ended_at")
+  status                SessionStatus @default(OPEN)
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  // Relationships
+  teachingAssignment TeachingAssignment @relation(fields: [teachingAssignmentId], references: [id], onDelete: Cascade)
+  device             IoTDevice          @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  attendanceRecords  AttendanceRecord[]
+
+  @@index([teachingAssignmentId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// ATTENDANCE RECORDS (Final Truth)
+// ============================================================================
+
+/// Individual attendance records for each student in each session
+/// This is the source of truth for attendance tracking
+model AttendanceRecord {
+  id         String           @id @default(uuid())
+  sessionId  String           @map("session_id")
+  studentId  String           @map("student_id")
+  status     AttendanceStatus @default(ABSENT)
+  scannedAt  DateTime?        @map("scanned_at") // Timestamp when student scanned their card/device
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  // Relationships
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  // Ensure one record per student per session
+  @@unique([sessionId, studentId])
+  @@index([sessionId])
+  @@index([studentId])
+  @@index([status])
+  @@index([scannedAt])
+  @@map("attendance_records")
 }
